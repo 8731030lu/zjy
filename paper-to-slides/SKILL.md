@@ -1,6 +1,6 @@
 ---
 name: paper-to-slides
-description: 将一篇科研论文组织成可编辑学术 PPT（PPTX）并输出结构化笔记。按论文自身章节顺序建页、把研究问题/数据/方法/结论/局限写入字段化内容、为每条关键结论保留页级证据锚点（页码·段落·图表）、为每页生成讲稿备注，并用 office-renderer 渲染真实 PDF/PNG 预览，最终写 result.json。触发词：把论文做成 PPT、文献总结幻灯片、论文结构化笔记、论文做成 slides、make slides from paper、paper to pptx、organize paper into slides、literature structured notes、文献阅读笔记、章节对齐笔记、证据回链笔记。
+description: 将科研论文组织成可编辑学术 PPT 与结构化笔记，保留章节对齐、字段化内容、页级证据锚点与讲稿备注，并输出渲染预览与 result.json。触发词：把论文做成 PPT、论文结构化笔记、paper to slides、make slides from paper。
 ---
 
 # paper-to-slides：论文 → 可编辑学术 PPT + 结构化笔记
