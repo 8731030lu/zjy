@@ -1,160 +1,105 @@
 ---
 name: literature-translation
-description: 将科研论文（或指定段落区间）翻译为可核验的双语对照结果：锁定术语表、段落级原文对齐、保护数字/单位/公式/文献编号、逐段指回原文证据。当任务为文献翻译、双语对照、术语一致性翻译、长文分段翻译或译文核验时使用。
+description: 将科研论文翻译为可核验的双语对照结果，锁定术语表并全篇回填、段落级对齐、保护数字单位公式与文献编号、逐段指回原文证据。用于文献翻译、双语对照、术语一致性翻译、长文分段续译与译文核验。
 ---
 
-# 文献翻译 Skill（术语锁定 · 段落对齐 · 可核验）
+# 文献翻译 Skill
 
-把一篇真实科研论文（PDF 或文本）翻译成**可复核的双语对照结果**，而不是只给大意或改写。
-核心原则：**术语表真正被执行**、**段落不漏不重不错位**、**数字单位公式引用准确保留**、**每段译文能指回原文并说明译法依据**。
+把一篇（或一个明确段落区间的）真实科研论文翻译为**可复核的双语对照结果**。验收只有四个口径：**术语稳、段落全、关系准、可核验**。
 
-## 何时使用
+## 触发与适用
 
-- 任务要求"翻译论文 / 双语对照 / 逐段翻译 / 术语一致性翻译 / 译文核验"。
-- 输入是科研论文 PDF 或带页码的文本，要求给出中文译文并保留原文定位。
-- 需要在标题、摘要、正文、图注、结论中统一同一术语译名。
+- 适用：科研论文的全文 / 摘要 / 章节 / 指定段落区间的翻译；双语段落对照；术语一致性翻译；长文分段续译；译文核验与修改建议。
+- 边界：面向"内容准确、可复核"的学术翻译，不做文学化润色；若目标文本不是学术文献，仍按本流程处理，并在 `result.json.status_reason` 说明。
 
-## 输入输出契约
+## 输入与输出
 
-运行环境（Harbor / DeepSeek Harness）提供：
+环境提供：
+- `/input/case.json`：`case_id`、任务说明、材料路径、输出字段要求（若含 `output_contract`，必须逐字保留其字段名）
+- `/input/task.md`：本次翻译的目标语言、范围（全文/指定区间）、格式等具体要求
+- 材料文件：论文 PDF 或文本（路径见 case.json / task.md，**读实际文件，不凭标签猜内容**）
 
-| 路径 | 内容 |
-|---|---|
-| `/input/case.json` | 案例标识 `case_id`、任务说明、材料路径、输出字段契约 `output_contract`（若给出） |
-| `/input/task.md` | 本次翻译任务的具体要求、目标语言、范围、约束 |
-| 材料文件 | 论文 PDF（或文本），路径见 `case.json` / `task.md` |
+工作目录 `/app/work/`，最终产物 `/app/output/`：
 
-工作目录 `/app/work`，最终结果与可编辑产物写入 `/app/output`。
-**必须输出** `/app/output/result.json`：包含 `case_id` 与 `output_contract` 要求的全部字段，并补上本 Skill 的标准字段（见下）。
+| 产物 | 路径 | 说明 |
+|---|---|---|
+| 原文抽取清单 | `/app/work/source.json` | 每段一行：段号、页码、章节、类型、原文 |
+| 锁定术语表 | `/app/output/terminology.tsv` | 源词→译名→首现位置→备注 |
+| 双语对照 | `/app/output/bilingual.md` | 段级原文/译文对照 |
+| 核验报告 | `/app/output/verification.md` | 四查结果与待人工确认清单 |
+| 结构化结果 | `/app/output/result.json` | 见下 |
 
-### result.json 标准字段
+### result.json 必含字段
 
 ```json
 {
   "case_id": "…",
   "status": "success | partial | cannot_judge | refused",
   "status_reason": "…",
-  "main_result": { "…": "按 output_contract 的主结果，或指向完整产物" },
-  "bilingual_file": "bilingual.md",
-  "terminology_file": "terminology.tsv",
-  "verification_file": "verification.md",
-  "evidence": [
-    { "para_id": "P1", "page": 1, "section": "Abstract", "kind": "body|caption|table|formula|reference", "locator": "页1第1段" }
-  ],
-  "uncertainty": {
-    "unreported": ["…"],
-    "ambiguous": ["…"],
-    "conflicting": ["…"],
-    "untranslated": ["…"]
-  },
-  "verification": { "checks_run": ["…"], "terminology_ok": true, "paragraph_ok": true, "relation_ok": true },
+  "main_result": { "translation": "…", "bilingual": "…", "terminology": "…" },
+  "evidence": [ { "para_id": "P1", "page": 1, "section": "Abstract", "kind": "body", "sentence": "S1" } ],
+  "uncertainty": { "unreported": [], "ambiguous": [], "untranslated": [] },
+  "verification": { "terminology_ok": true, "paragraph_ok": true, "relation_ok": true },
   "change_log": ["…"]
 }
 ```
 
-`status` 取值：全部完成=`success`；部分可译=`partial`（须写明限制）；无法判断=`cannot_judge`（须写原因）；无法执行=`refused`（须写原因与可人工接管位置）。
-**不要编造原文没有的内容**；译不准处显式标注，不要含混。
+若 `case.json` 声明了 `output_contract`，把它的**每个字段**原样并入 `main_result`，不得改名、漏项。
 
-## 工作流（按顺序执行，尽早保存部分产物）
+## 执行步骤（严格顺序）
 
-### 第 0 步 读输入、定边界
-1. 读 `/input/case.json` 与 `/input/task.md`。
-2. 确认：目标语言、翻译范围（全文/指定段落区间）、是否要求图表题注/表头/公式/参考文献一并翻译。
-3. 若 `case.json` 定义了 `output_contract`，记录其字段名——`result.json` 必须逐字包含这些字段。
-4. 读实际材料文件；**不要按文件名或标签臆测内容**，以真实文件为准。
+### 第 1 步：读输入，划边界
+读 `/input/case.json` 与 `/input/task.md`，确定：目标语言、翻译范围（全文还是某区间）、输出字段。记录 `case_id` 与材料路径。若范围是区间，先定位起始页与段落，只译区间内，但术语口径仍取全文。
 
-### 第 1 步 抽取原文并保留结构
-- 有文字层：用 `pdf-text-tool` 按页抽取，保留页码、段落边界、栏顺序、标题层级。
-- 无文字层（扫描件）：用 `pdf-render-tool` 渲染页 → `ocr-tool` 识别；对识别质量差处标注"OCR 待确认"。
-- 结构标记（必须保留）：
-  - 段落 `para_id`（稳定编号 P1…Pn，全文唯一）
-  - 页码、章节（Section）、栏
-  - 元素类型 `kind`：`body`(正文段) / `heading`(标题) / `caption`(图注/表题) / `table`(表头/表体) / `formula`(公式) / `reference`(参考文献条目)
-  - 公式编号、图表编号、文献编号 `[n]`、脚注
-- 产出 `source_manifest`（写入 `/app/work/source.json`）：段落清单，每段含 `para_id, page, section, kind, text`。
+### 第 2 步：抽取原文并编号
+读材料实际文件，抽取全文文本，保留结构。给每个**语义段落**分配稳定 `para_id`（P1、P2…），规则见 `resources/bilingual_schema.md`。关键规则：
+- 按阅读顺序编号，跨页、跨栏、跨章节的续段**合并为一段**并标注接续位置；
+- 图注、表头、公式块、文献条目是独立段，用 `kind` 区分 `body/heading/caption/table/formula/reference`；
+- 每段记录 `page`、`section`、`sentence` 起止，写入 `/app/work/source.json`。
 
-### 第 2 步 建立并锁定术语表
-1. 从标题、摘要、关键词、各级标题、正文、图注、结论抽取**领域术语**与缩写。
-2. 每个术语给出：源词、锁定译名、领域、首现位置、备注（如"保留原文不译""行业标准译名"）。
-3. **先锁定后翻译**：全文翻译只能使用术语表内的译名；遇到新术语先回填术语表再使用。
-4. 规则：
-   - 数字、单位、公式、变量符号、文献编号**不进术语表、不翻译**（见第 4 步保护规则）。
-   - 专有名词（人名/机构/软件/数据集）按标准译名或保留原文，全篇一致。
-   - 缩写首次出现处写"全称（缩写，译名）"，之后只用锁定译名。
-   - 一个源词只允许一个译名；若确有歧义，显式标注"待人工确认"，不悄悄换译名。
+### 第 3 步：建术语表并锁定
+从标题、摘要、正文、图注、结论抽取领域术语与缩写，为每个术语定**唯一译名**，写入 `/app/output/terminology.tsv`（格式见 `resources/terminology_schema.md`）。
+**锁定后再翻译**：翻译中只准用术语表里的译名；遇到新术语先回填术语表（源词、译名、首现位置）再用。全篇"先锁定、后使用、遇新回填"。
 
-### 第 3 步 段落切分与对齐
-- 检查跨页、跨栏、跨章节段落：不得漏段、重复、错位、把一段拆成两段或把两段并成一段。
-- 段号 `para_id` 必须与原文一一对应；补齐因分页/分栏导致的接续。
-- 表格按行/列结构保留；公式作为独立单元（编号保留）；图注与对应图号绑定。
-- 产出段落级对齐框架（写入 `/app/work/alignment.json`）：`para_id ↔ (page, section, kind)`。
+### 第 4 步：逐段翻译（硬约束）
+逐段翻译，携带"上一段要点 + 当前活动术语表"。每段必须遵守：
+- **数字与单位**：数值、量纲、误差、区间符号（±、~、≤、≥、×、^）原样保留；不换算单位、不四舍五入。
+- **公式**：公式内容与编号保留，只译包围文字。
+- **编号**：文献 `[1]`、图 `Fig. 3`、表 `Table 2`、公式 `Eq. (4)` 原样保留。
+- **否定与限定**：not / only / unless / at least / at most / no / without / approximately / up to 精确译出，不丢、不反。
+- **指代**：this / it / they / former / latter / the former / the latter 指代不明时译成显式名词（如"该方法""前者（X）"）。
+- **因果与让步**：because / due to / although / despite / whereas / however 关系保留。
+- **术语**：一律用锁定译名，禁止临时改译；缩写首次给出全称，之后保持。
 
-### 第 4 步 逐段翻译（携带上下文 + 硬约束）
-按语义边界逐段翻译；翻译下一段时携带：上一段要点、活动术语表、指代对象缓存。
+### 第 5 步：双语对照输出
+每段输出一行：`para_id | 原文 | 译文 | 页码 | 章节 | 类型 | 备注`，写入 `/app/output/bilingual.md`（格式见 `resources/bilingual_schema.md`）。译不准、保留原文、OCR 存疑处显式标注 `【未译】/【待确认】/【OCR 存疑】`，不静默跳过。
 
-**硬约束（违反即扣正确性分）**：
-- **数字与单位**：数值、量纲、误差、范围符号原样保留；不换算、不四舍五入；确需换算须显式注明。
-- **公式**：LaTeX/公式内容原样保留；只翻译公式周围文字；公式编号保留。
-- **文献编号与引用标记**：`[1]`、`(Smith, 2020)`、`Fig. 3`、`Table 2`、`Eq. (4)` 原样保留，不翻译、不改写。
-- **否定与限定**：not / only / unless / at least / at most / ≤ / ≥ / approximately / exactly / except 必须精确译出，不得丢失或反转。
-- **指代**：this / it / the former / the latter / which 若指代不明，译为显式名词（可加括号说明），保持一致。
-- **因果与让步**：because / although / however / therefore / since / despite 逻辑关系保留。
-- **术语**：一律用锁定术语表译名，禁止临时改译。
+### 第 6 步：译文核验（四查）
+按 `resources/verification_checklist.md` 逐项核对，结果写入 `/app/output/verification.md`：
+1. **术语稳**：同一术语在标题/摘要/正文/图注/结论中译名一致；术语表条目齐全、无空译名。
+2. **段落全**：`para_id` 数量与顺序同 `source.json` 一致，无漏段、重段、错位；跨页/跨栏接续正确。
+3. **关系准**：数字、单位、公式、图表与文献编号、否定限定、指代、因果让步与原文一致。
+4. **可核验**：每段译文有页码/段落/句子定位；未译、存疑项已标注并列入 `uncertainty`。
 
-### 第 5 步 双语对照输出
-- 每段输出 `para_id | 原文 | 译文 | 页码 | 章节 | 类型 | 译法依据/备注`。
-- 译不准、保留原文、OCR 不确定处，显式标注 `【未译】` / `【待确认】` / `【OCR 存疑】`，不混入正文假装已译。
-- 可编辑产物写入 `/app/output/bilingual.md`（Markdown 对照表）。
+核验发现问题就地修正；无法判定者列入 `uncertainty.ambiguous`，不写成事实。
 
-### 第 6 步 译文核验（自检）
-按 `resources/verification_checklist.md` 逐项检查并写核验报告：
-1. **术语稳**：在标题/摘要/正文/图注/结论中扫描每个锁定术语，确认译名一致、无临时改译。
-2. **段落全**：核对 `para_id` 数量与顺序，确认无漏段/重段/错位/误并。
-3. **关系准**：抽查+模式扫描数字、单位、公式、图表编号、文献编号、否定与限定、指代、因果让步。
-4. **可核验**：每段译文有原文定位；待确认项清单明确。
-- 产出 `/app/output/verification.md`：检查项、发现的问题、需要人工确认的清单。
+### 第 7 步：写结构化结果
+写 `/app/output/result.json`（结构见上）。`status` 取值：全部完成 `success`；有缺漏/存疑 `partial` 并在 `status_reason` 说明；材料冲突 `cannot_judge`；材料缺失 `refused`。`evidence` 至少覆盖每个关键结论的定位；`change_log` 记录锁定、回填、修正等关键动作。
 
-### 第 7 步 写结果与可编辑产物
-1. `/app/output/terminology.tsv`：术语表（TSV，含来源位置）。
-2. `/app/output/bilingual.md`：双语对照全文。
-3. `/app/output/verification.md`：核验报告。
-4. `/app/output/result.json`：见上文标准字段；**确保包含 `case.json` 声明的全部 `output_contract` 字段**。
-5. 若任务要求 Office/PPT/图表等可编辑产物：用 `office-renderer` / `latex-compiler` 产出**真实渲染的 PDF/PNG 预览**，与可编辑源文件一起放入 `/app/output`，并在 `result.json` 注明。
-6. 部分完成时，明确写出已覆盖范围与未完成限制；**失败也要保存已得到的部分产物**。
+## 异常处理
 
-## 异常处理（详细见 resources/error_handling.md）
-- 无文字层 → OCR；质量差处标注。
-- 公式/表格为图片 → 保留图片，标注"图内公式/表格未译"。
-- 参考文献无法解析 → 保留原样，不猜测补全。
-- 原文残缺/语言混杂 → 注明并给 `partial` 状态。
-- 材料缺失 → `refused` + 原因，不得编造数据。
+按 `resources/error_handling.md` 处置：文字层缺失→OCR；公式/表格为图片→保留并标注；参考文献无法解析→原样保留；原文残缺→`partial` 并写明；材料缺失→`refused`。**不编造原文没有的内容。**
+
+## 资源
+
+- `resources/terminology_schema.md`：术语表格式、锁定/回填/验证规则
+- `resources/bilingual_schema.md`：段号生成、段落对齐、双语对照与 evidence 格式
+- `resources/verification_checklist.md`：四查清单
+- `resources/error_handling.md`：异常处理手册
+- `resources/usage.md`：使用与方法说明、最小调用示例
 
 ## 最小调用示例（示意，非正式案例）
 
-输入 `/input/case.json`：
-```json
-{ "case_id": "example-001", "task": "translate abstract", "output_contract": { "fields": ["abstract_zh"] } }
-```
-
-示意输出 `/app/output/result.json`（**仅为示例，标明示例**）：
-```json
-{
-  "case_id": "example-001",
-  "status": "success",
-  "status_reason": "",
-  "main_result": { "abstract_zh": "【示例】……（示意译文）……" },
-  "bilingual_file": "bilingual.md",
-  "terminology_file": "terminology.tsv",
-  "verification_file": "verification.md",
-  "evidence": [ { "para_id": "P1", "page": 1, "section": "Abstract", "kind": "body" } ],
-  "uncertainty": { "unreported": [], "ambiguous": [], "conflicting": [], "untranslated": [] },
-  "verification": { "checks_run": ["terminology", "paragraph", "relation"], "terminology_ok": true, "paragraph_ok": true, "relation_ok": true },
-  "change_log": ["示例：按术语表锁定译名"]
-}
-```
-
-## 资源文件
-- `resources/terminology_schema.md` — 术语表格式与抽取/锁定规则
-- `resources/bilingual_schema.md` — 双语对照输出与 source/alignment JSON 结构
-- `resources/verification_checklist.md` — 四类问题核验清单
-- `resources/error_handling.md` — 异常处理手册
+输入 `case.json`：`{"case_id": "demo", "task": "翻译摘要为中文"}`，`task.md`：`目标语言=中文，范围=摘要`。
+执行：读输入 → 抽摘要段（P1）→ 锁术语 → 译 P1 → 四查 → 写结果。
+输出 `result.json`：`status:"success"`，`main_result.translation` 为摘要译文，`evidence:[{para_id:"P1", page:1, section:"Abstract", kind:"body"}]`。
