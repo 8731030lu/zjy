@@ -31,11 +31,13 @@
 Markdown 表格，每段一行：
 
 ```markdown
-| para_id | 原文 | 译文 | 页码 | 章节 | 类型 | 备注 |
-|---|---|---|---|---|---|---|
-| P1 | The proposed … | 本文提出的…… | 1 | Abstract | body | 术语锁定：beamforming→波束成形 |
-| P2 | Fig. 3 shows … | 图 3 展示了…… | 2 | Results | caption | 【待确认】… |
+| para_id | 原文 | 译文 | 页码 | 章节 | 类型 | 句子边界 | 备注 |
+|---|---|---|---|---|---|---|---|
+| P1 | The proposed … | 本文提出的…… | 1 | Abstract | body | S1–S3 | 术语锁定：beamforming→波束成形 |
+| P2 | Fig. 3 shows … | 图 3 展示了…… | 2 | Results | caption | S1 | 【待确认】… |
 ```
+
+- `句子边界` 记录该段包含的句子起止（如 S1–S3），译文按句对应，便于逐句核对与引用定位。
 
 - 每行一段，`para_id` 与 `source.json` 一一对应，顺序一致。
 - 备注列标注：`术语锁定：X→Y`、`【未译】`、`【待确认】`、`【OCR 存疑】`、`跨页 P2→P3`。
